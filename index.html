@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#000000">
+    <title>Firefly Night</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Main Simulation Canvas -->
+    <canvas id="simulation-canvas"></canvas>
+
+    <!-- Ambient Moonlight Overlay (soft radial gradient) -->
+    <div id="moonlight-overlay"></div>
+
+    <!-- UI Overlay container -->
+    <div id="ui-container">
+        <!-- Floating Gear Button (subtle, semi-transparent) -->
+        <button id="settings-btn" aria-label="Open Settings" class="subtle-btn">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+        </button>
+
+        <!-- Dynamic Instructions overlay (fades out after user starts tapping) -->
+        <div id="intro-instructions" class="fade-in">
+            <p class="title">Firefly Night</p>
+            <p class="subtitle">Tap the screen to call a firefly</p>
+            <div class="gestures">
+                <span>Double-tap for a swarm</span>
+                <span>•</span>
+                <span>Long-press to attract</span>
+            </div>
+        </div>
+
+        <!-- Settings Modal/Panel Overlay -->
+        <div id="settings-panel" class="hidden">
+            <div class="panel-header">
+                <h2>Simulation Settings</h2>
+                <button id="close-btn" aria-label="Close Settings" class="icon-btn">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="panel-content">
+                <!-- Ambient Audio Control -->
+                <div class="control-group">
+                    <div class="control-label">
+                        <h3>Ambient Sounds</h3>
+                        <p>Relaxing crickets and night breeze synthesis</p>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="audio-toggle">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+
+                <!-- Moonlight Control -->
+                <div class="control-group">
+                    <div class="control-label">
+                        <h3>Moonlight Glow</h3>
+                        <p>Enables a soft, dark-blue ambient backdrop</p>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="moonlight-toggle">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+
+                <!-- Dust Particles Control -->
+                <div class="control-group">
+                    <div class="control-label">
+                        <h3>Night Dust</h3>
+                        <p>Floating luminous particles reflecting the night sky</p>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="dust-toggle" checked>
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+
+                <!-- Max Fireflies Slider -->
+                <div class="control-group vertical">
+                    <div class="slider-header">
+                        <h3>Max Fireflies</h3>
+                        <span id="max-fireflies-val">150</span>
+                    </div>
+                    <div class="slider-container">
+                        <input type="range" id="max-fireflies-slider" min="10" max="500" value="150" class="range-slider">
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="actions-grid">
+                    <button id="scatter-btn" class="action-btn">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="btn-icon">
+                            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
+                        </svg>
+                        Scatter Swarm
+                    </button>
+                    
+                    <button id="clear-btn" class="action-btn danger">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="btn-icon">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        </svg>
+                        Clear Scene
+                    </button>
+                </div>
+
+                <button id="screenshot-btn" class="action-btn primary full-width">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="btn-icon">
+                        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                        <circle cx="12" cy="13" r="4"></circle>
+                    </svg>
+                    Capture Scene
+                </button>
+            </div>
+            
+            <div class="panel-footer">
+                <p>Relax and touch the screen to create fireflies.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="audio.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

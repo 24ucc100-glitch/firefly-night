@@ -448,6 +448,68 @@ class NightAmbience {
         }, 800);
     }
 
+    playRevealMelody() {
+        if (!this.isInitialized || !this.ctx || this.ctx.state === 'suspended' || !this.isPlaying) return;
+
+        const ctx = this.ctx;
+        const now = ctx.currentTime;
+
+        const notes = [329.63, 440.00, 554.37, 659.25, 880.00]; // E4, A4, C#5, E5, A5 (A major pentatonic)
+        const delays = [0, 0.18, 0.36, 0.54, 0.72];
+        const durations = [2.0, 2.0, 2.2, 2.5, 3.0];
+        const gains = [0.03, 0.03, 0.025, 0.025, 0.02];
+
+        notes.forEach((freq, i) => {
+            const startTime = now + delays[i];
+            const duration = durations[i];
+            const peakGain = gains[i];
+
+            const osc = ctx.createOscillator();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(freq, startTime);
+
+            const filter = ctx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(1200, startTime);
+
+            const gNode = ctx.createGain();
+            gNode.gain.setValueAtTime(0, startTime);
+            gNode.gain.linearRampToValueAtTime(peakGain, startTime + 0.05);
+            gNode.gain.setValueAtTime(peakGain, startTime + 0.2);
+            gNode.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+
+            let panner = null;
+            if (ctx.createStereoPanner) {
+                panner = ctx.createStereoPanner();
+                const panVal = -0.6 + (i * 0.3);
+                panner.pan.setValueAtTime(panVal, startTime);
+            }
+
+            if (panner) {
+                osc.connect(filter);
+                filter.connect(gNode);
+                gNode.connect(panner);
+                panner.connect(this.masterGain);
+            } else {
+                osc.connect(filter);
+                filter.connect(gNode);
+                gNode.connect(this.masterGain);
+            }
+
+            osc.start(startTime);
+            
+            setTimeout(() => {
+                try {
+                    osc.stop();
+                    osc.disconnect();
+                    filter.disconnect();
+                    gNode.disconnect();
+                    if (panner) panner.disconnect();
+                } catch (e) {}
+            }, (delays[i] + duration + 0.5) * 1000);
+        });
+    }
+
     cleanup() {
         this.cricketsActive = false;
         this.chimesActive = false;

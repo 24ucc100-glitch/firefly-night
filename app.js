@@ -38,7 +38,7 @@ let lastTapTime = 0;
 // Phase transition timing
 let phaseTimer = 0;
 let revealStartTime = 0;
-const MAX_FIREFLIES = 200; // Performance safety cap
+const MAX_FIREFLIES = 450; // Performance safety cap
 
 // v2 Settings & Guided sequence variables
 let sequenceCount = 0;
@@ -47,6 +47,7 @@ let hasTriggeredConvergence = false;
 let enableDust = true;
 let dustParticles = [];
 let lastTwinkleTime = 0;
+let hasPlayedRevealMelody = false;
 
 // --- Dust Particle Class ---
 class DustParticle {
@@ -714,6 +715,7 @@ function startImageReveal() {
     currentPhase = PHASE_REVEAL;
     revealStartTime = Date.now();
     revealParticles = [];
+    hasPlayedRevealMelody = false;
 
     if (!isImageLoaded) {
         // Fallback if image fails to load
@@ -792,9 +794,9 @@ function startFinalScene() {
 
 // Spawns occasional fireflies over the image slowly
 function handleFinalEdgeSpawns() {
-    if (fireflies.length >= 12) return; // Cap active ones
+    if (fireflies.length >= 50) return; // Cap active ones at a fuller swarm of 50
     
-    if (Math.random() < 0.005) { // Slow spawn chance (~once per 3-5 seconds)
+    if (Math.random() < 0.018) { // Gradual spawn chance (roughly one every 1-2 seconds)
         // Spawn anywhere on screen, fading in slowly
         const x = 50 + Math.random() * (width - 100);
         const y = 50 + Math.random() * (height - 100);
@@ -1126,6 +1128,10 @@ function tick() {
         let imgAlpha = 0;
         if (revealTimer > 3500) {
             imgAlpha = Math.min(1.0, (revealTimer - 3500) / 1500);
+            if (!hasPlayedRevealMelody) {
+                hasPlayedRevealMelody = true;
+                ambience.playRevealMelody();
+            }
         }
 
         if (imgAlpha > 0 && isImageLoaded) {

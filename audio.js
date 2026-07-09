@@ -3,35 +3,49 @@ class NightAmbience {
         this.ctx = null;
         this.masterGain = null;
         
-        // Wind nodes
+        // Wind Nodes
         this.windNoise = null;
         this.windFilter = null;
         this.windGain = null;
-        this.windLFO1 = null;
-        this.windLFO2 = null;
+        this.windLFOFreq = null;
+        this.windLFOGain = null;
 
-        // Crickets variables
+        // Drone Nodes (Warm cinematic pad)
+        this.droneOscs = [];
+        this.droneFilter = null;
+        this.droneGain = null;
+        this.droneLFO = null;
+
+        // Cricket variables
+        this.cricketsActive = false;
         this.cricketTimer = null;
         this.cricketGains = [];
-        this.cricketsActive = false;
+
+        // Chimes variables
+        this.chimesActive = false;
+        this.chimesTimer = null;
 
         this.isPlaying = false;
+        this.isInitialized = false;
     }
 
     init() {
-        if (this.ctx) return;
+        if (this.isInitialized) return;
 
-        // Create audio context
         const AudioContextClass = window.AudioContext || window.webkitAudioContext;
         this.ctx = new AudioContextClass();
         
-        // Create master gain for fading entire soundscape
+        // Master Gain Node for controlling global fades (fade-out/fade-in)
         this.masterGain = this.ctx.createGain();
         this.masterGain.gain.setValueAtTime(0, this.ctx.currentTime);
         this.masterGain.connect(this.ctx.destination);
 
         this.setupWind();
+        this.setupDrone();
         this.setupCrickets();
+        this.setupChimes();
+
+        this.isInitialized = true;
     }
 
     setupWind() {
@@ -49,88 +63,122 @@ class NightAmbience {
         this.windNoise.buffer = noiseBuffer;
         this.windNoise.loop = true;
 
-        // 2. Create Lowpass Filter for Wind
+        // 2. Resonant Lowpass Filter for Wind
         this.windFilter = ctx.createBiquadFilter();
         this.windFilter.type = 'lowpass';
-        this.windFilter.Q.setValueAtTime(2.0, ctx.currentTime);
-        this.windFilter.frequency.setValueAtTime(200, ctx.currentTime);
+        this.windFilter.Q.setValueAtTime(1.5, ctx.currentTime);
+        this.windFilter.frequency.setValueAtTime(160, ctx.currentTime); // Low baseline frequency
 
-        // 3. Create Wind Gain
+        // 3. Modulate Wind Cutoff Frequency with slow LFO
+        this.windLFOFreq = ctx.createOscillator();
+        this.windLFOFreq.frequency.setValueAtTime(0.05, ctx.currentTime); // 20s wave
+        const lfoFreqGain = ctx.createGain();
+        lfoFreqGain.gain.setValueAtTime(80, ctx.currentTime); // Swing filter cutoff by 80Hz
+        this.windLFOFreq.connect(lfoFreqGain);
+        lfoFreqGain.connect(this.windFilter.frequency);
+
+        // 4. Modulate Wind Gain for volume swells
         this.windGain = ctx.createGain();
-        this.windGain.gain.setValueAtTime(0.15, ctx.currentTime); // Low baseline volume
-
-        // 4. Modulate Wind Cutoff Frequency with an LFO (Slow wind waves)
-        this.windLFO1 = ctx.createOscillator();
-        this.windLFO1.frequency.setValueAtTime(0.06, ctx.currentTime); // Very slow: 16s cycle
-        const lfoGain1 = ctx.createGain();
-        lfoGain1.gain.setValueAtTime(100, ctx.currentTime); // Oscillate by 100Hz
+        this.windGain.gain.setValueAtTime(0.06, ctx.currentTime); // Low base volume
         
-        this.windLFO1.connect(lfoGain1);
-        lfoGain1.connect(this.windFilter.frequency);
+        this.windLFOGain = ctx.createOscillator();
+        this.windLFOGain.frequency.setValueAtTime(0.033, ctx.currentTime); // 30s volume swells
+        const lfoGainGain = ctx.createGain();
+        lfoGainGain.gain.setValueAtTime(0.05, ctx.currentTime); // Swing gain by 0.05
+        this.windLFOGain.connect(lfoGainGain);
+        lfoGainGain.connect(this.windGain.gain);
 
-        // 5. Modulate Wind Volume with a separate LFO (Volume swells)
-        this.windLFO2 = ctx.createOscillator();
-        this.windLFO2.frequency.setValueAtTime(0.04, ctx.currentTime); // 25s cycle
-        const lfoGain2 = ctx.createGain();
-        lfoGain2.gain.setValueAtTime(0.08, ctx.currentTime); // Swells volume by 0.08
-
-        this.windLFO2.connect(lfoGain2);
-        lfoGain2.connect(this.windGain.gain);
-
-        // Connect Wind nodes
+        // Connections
         this.windNoise.connect(this.windFilter);
         this.windFilter.connect(this.windGain);
         this.windGain.connect(this.masterGain);
 
-        // Start oscillators and noise
         this.windNoise.start(0);
-        this.windLFO1.start(0);
-        this.windLFO2.start(0);
+        this.windLFOFreq.start(0);
+        this.windLFOGain.start(0);
+    }
+
+    setupDrone() {
+        const ctx = this.ctx;
+
+        // Cinematic low-frequency harmonic pad
+        this.droneFilter = ctx.createBiquadFilter();
+        this.droneFilter.type = 'lowpass';
+        this.droneFilter.frequency.setValueAtTime(110, ctx.currentTime); // Dark lowpass
+
+        this.droneGain = ctx.createGain();
+        this.droneGain.gain.setValueAtTime(0.06, ctx.currentTime); // Very quiet hum
+
+        // Three low frequency oscillators creating a rich major/neutral chord
+        const freqs = [55.00, 110.00, 165.00]; // A1, A2, E3
+        const types = ['sine', 'triangle', 'sine'];
+
+        for (let i = 0; i < freqs.length; i++) {
+            const osc = ctx.createOscillator();
+            osc.type = types[i];
+            osc.frequency.setValueAtTime(freqs[i], ctx.currentTime);
+            // Stagger phase slightly via detune
+            osc.detune.setValueAtTime((Math.random() - 0.5) * 8, ctx.currentTime);
+            
+            const oGain = ctx.createGain();
+            oGain.gain.setValueAtTime(0.3, ctx.currentTime);
+            
+            osc.connect(oGain);
+            oGain.connect(this.droneFilter);
+            
+            osc.start(0);
+            this.droneOscs.push({ osc, oGain });
+        }
+
+        // Modulate Drone volume with slow LFO
+        this.droneLFO = ctx.createOscillator();
+        this.droneLFO.frequency.setValueAtTime(0.02, ctx.currentTime); // 50s wave
+        const lfoGain = ctx.createGain();
+        lfoGain.gain.setValueAtTime(0.02, ctx.currentTime); // Subtle volume shift
+        this.droneLFO.connect(lfoGain);
+        lfoGain.connect(this.droneGain.gain);
+
+        this.droneFilter.connect(this.droneGain);
+        this.droneGain.connect(this.masterGain);
+
+        this.droneLFO.start(0);
     }
 
     setupCrickets() {
-        // We will dynamically spawn and schedule cricket sounds to avoid infinite loops when silent.
-        // We schedule crickets using a recursive timer so they chirp asynchronously.
         this.cricketsActive = true;
         this.scheduleCricketChirps();
     }
 
     createSingleCricket(frequency, chirpDuration, pulseRate, detune, panValue) {
-        if (!this.ctx || this.ctx.state === 'suspended') return;
+        if (!this.ctx || this.ctx.state === 'suspended' || !this.cricketsActive) return;
 
         const ctx = this.ctx;
         const now = ctx.currentTime;
 
-        // 1. Carrier Oscillator (High pitch chirp)
         const carrier = ctx.createOscillator();
         carrier.type = 'sine';
         carrier.frequency.setValueAtTime(frequency, now);
         carrier.detune.setValueAtTime(detune, now);
 
-        // 2. Modulator (Fast pulse modulation, e.g. 50Hz, to create the cricket's 'chirp' texture)
         const modulator = ctx.createOscillator();
-        modulator.type = 'sawtooth'; // Sawtooth gives a sharper, more natural insect texture
+        modulator.type = 'sawtooth';
         modulator.frequency.setValueAtTime(pulseRate, now);
 
         const modulatorGain = ctx.createGain();
-        modulatorGain.gain.setValueAtTime(0.7, now);
+        modulatorGain.gain.setValueAtTime(0.65, now);
 
-        // 3. Main Chirp Gain Node (Controls the overall shape of this specific chirp)
         const chirpGain = ctx.createGain();
         chirpGain.gain.setValueAtTime(0, now);
 
-        // 4. Stereo Panning Node to distribute crickets across the soundscape
         let panner = null;
         if (ctx.createStereoPanner) {
             panner = ctx.createStereoPanner();
             panner.pan.setValueAtTime(panValue, now);
         }
 
-        // Modulation connection: Modulator -> Gain -> Carrier Frequency
         modulator.connect(modulatorGain);
         modulatorGain.connect(carrier.frequency);
 
-        // Main signal connection
         if (panner) {
             carrier.connect(chirpGain);
             chirpGain.connect(panner);
@@ -140,21 +188,18 @@ class NightAmbience {
             chirpGain.connect(this.masterGain);
         }
 
-        // Start oscillators
         carrier.start(now);
         modulator.start(now);
 
-        // Keep track of active gains so we can clean up if turned off
         this.cricketGains.push(chirpGain);
 
-        // Schedule the chirp envelope:
-        // A single chirp consists of a rapid fade in, sustain, and decay
+        // Smooth chirp amplitude envelope
         chirpGain.gain.setValueAtTime(0, now);
-        chirpGain.gain.linearRampToValueAtTime(0.015, now + 0.02); // Soft volume to prevent piercing
-        chirpGain.gain.setValueAtTime(0.015, now + chirpDuration - 0.05);
+        chirpGain.gain.linearRampToValueAtTime(0.018, now + 0.03); // Low volume
+        chirpGain.gain.setValueAtTime(0.018, now + chirpDuration - 0.08);
         chirpGain.gain.exponentialRampToValueAtTime(0.0001, now + chirpDuration);
 
-        // Stop and clean up nodes after playback
+        // Stop and clean nodes
         setTimeout(() => {
             try {
                 carrier.stop();
@@ -166,7 +211,6 @@ class NightAmbience {
                 chirpGain.disconnect();
             } catch (e) {}
 
-            // Remove from tracking array
             const idx = this.cricketGains.indexOf(chirpGain);
             if (idx > -1) this.cricketGains.splice(idx, 1);
         }, (chirpDuration + 0.2) * 1000);
@@ -175,29 +219,126 @@ class NightAmbience {
     scheduleCricketChirps() {
         if (!this.cricketsActive) return;
 
-        // Schedule next chirp in 1 to 4.5 seconds (randomized interval)
-        const nextChirpDelay = 1000 + Math.random() * 3500;
+        // Random delay between chirp bursts (1.5s - 4s)
+        const nextDelay = 1500 + Math.random() * 2500;
 
         this.cricketTimer = setTimeout(() => {
             if (this.isPlaying && this.ctx && this.ctx.state === 'running') {
-                // Spawn 1-2 crickets in parallel with slight differences to simulate a multi-distance field
-                const numCrickets = Math.random() > 0.6 ? 2 : 1;
-                for (let i = 0; i < numCrickets; i++) {
-                    const freq = 3600 + Math.random() * 800; // 3.6kHz - 4.4kHz
-                    const duration = 0.8 + Math.random() * 1.2; // 0.8s - 2.0s chirp train
-                    const pulses = 45 + Math.random() * 20; // 45Hz - 65Hz pulses
-                    const detune = (Math.random() - 0.5) * 50;
-                    const pan = (Math.random() - 0.5) * 1.8; // Left to right panorama
+                const count = Math.random() > 0.5 ? 2 : 1;
+                for (let i = 0; i < count; i++) {
+                    const freq = 3500 + Math.random() * 900; // 3.5kHz - 4.4kHz
+                    const duration = 0.9 + Math.random() * 1.0; // 0.9s - 1.9s
+                    const pulses = 45 + Math.random() * 20; // 45Hz - 65Hz pulse modulation
+                    const detune = (Math.random() - 0.5) * 40;
+                    const pan = (Math.random() - 0.5) * 1.7; // Stereo balance
 
-                    // Delay secondary crickets slightly to stagger their start times
-                    const startDelay = i * (100 + Math.random() * 300);
+                    const startDelay = i * (120 + Math.random() * 200);
                     setTimeout(() => {
                         this.createSingleCricket(freq, duration, pulses, detune, pan);
                     }, startDelay);
                 }
             }
             this.scheduleCricketChirps();
-        }, nextChirpDelay);
+        }, nextDelay);
+    }
+
+    setupChimes() {
+        this.chimesActive = true;
+        this.scheduleMagicalChimes();
+    }
+
+    playSingleChime() {
+        if (!this.ctx || this.ctx.state === 'suspended' || !this.chimesActive) return;
+
+        const ctx = this.ctx;
+        const now = ctx.currentTime;
+        
+        // Base frequency of the chime (high crystal/magical register)
+        const baseFreq = 1600 + Math.random() * 800; // 1.6kHz - 2.4kHz
+        
+        // 4 additive harmony partials simulating wind chime tubes
+        const intervals = [1.0, 1.25, 1.5, 1.88]; // Root, Major Third, Perfect Fifth, Major Seventh
+        const panValue = (Math.random() - 0.5) * 1.5;
+        
+        // Common Stereo Panner
+        let panner = null;
+        if (ctx.createStereoPanner) {
+            panner = ctx.createStereoPanner();
+            panner.pan.setValueAtTime(panValue, now);
+        }
+
+        const chimeMasterGain = ctx.createGain();
+        chimeMasterGain.gain.setValueAtTime(0, now);
+        
+        if (panner) {
+            chimeMasterGain.connect(panner);
+            panner.connect(this.masterGain);
+        } else {
+            chimeMasterGain.connect(this.masterGain);
+        }
+
+        // Trigger a series of 3-5 quick random bell strikes in a cluster (sweeping wind chimes)
+        const strikeCount = 3 + Math.floor(Math.random() * 3);
+        const activeOscs = [];
+
+        for (let s = 0; s < strikeCount; s++) {
+            const strikeDelay = s * (150 + Math.random() * 250); // Speed of chime sweep
+            const strikeTime = now + (strikeDelay / 1000);
+            
+            intervals.forEach((ratio, idx) => {
+                const osc = ctx.createOscillator();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(baseFreq * ratio, strikeTime);
+                osc.detune.setValueAtTime((Math.random() - 0.5) * 15, strikeTime);
+
+                const oscGain = ctx.createGain();
+                // Randomize strike intensity of each tube
+                const intensity = (0.015 / intervals.length) * (1 - idx * 0.18);
+                oscGain.gain.setValueAtTime(0, strikeTime);
+                oscGain.gain.linearRampToValueAtTime(intensity, strikeTime + 0.005);
+                oscGain.gain.exponentialRampToValueAtTime(0.0001, strikeTime + 1.8 + Math.random() * 1.2); // Smooth long ring
+
+                osc.connect(oscGain);
+                oscGain.connect(chimeMasterGain);
+                
+                osc.start(strikeTime);
+                activeOscs.push(osc);
+            });
+        }
+
+        // Master envelope for this entire chime event
+        chimeMasterGain.gain.setValueAtTime(0, now);
+        chimeMasterGain.gain.linearRampToValueAtTime(1.0, now + 0.02);
+        chimeMasterGain.gain.setValueAtTime(1.0, now + 2.0);
+        chimeMasterGain.gain.exponentialRampToValueAtTime(0.0001, now + 5.0);
+
+        // Clean up oscillators after they fade out completely
+        setTimeout(() => {
+            activeOscs.forEach(osc => {
+                try {
+                    osc.stop();
+                    osc.disconnect();
+                } catch(e) {}
+            });
+            try {
+                chimeMasterGain.disconnect();
+                if (panner) panner.disconnect();
+            } catch(e) {}
+        }, 6000);
+    }
+
+    scheduleMagicalChimes() {
+        if (!this.chimesActive) return;
+
+        // Schedule chime play event every 15 to 40 seconds
+        const nextChimeDelay = 15000 + Math.random() * 25000;
+
+        this.chimesTimer = setTimeout(() => {
+            if (this.isPlaying && this.ctx && this.ctx.state === 'running') {
+                this.playSingleChime();
+            }
+            this.scheduleMagicalChimes();
+        }, nextChimeDelay);
     }
 
     start() {
@@ -207,38 +348,47 @@ class NightAmbience {
         }
         
         this.isPlaying = true;
-        // Fade in master gain smoothly over 3 seconds
         const now = this.ctx.currentTime;
         this.masterGain.gain.cancelScheduledValues(now);
         this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, now);
-        this.masterGain.gain.linearRampToValueAtTime(1.0, now + 3.0);
+        
+        // Smoothly fade in entire forest ambience over 5 seconds
+        this.masterGain.gain.linearRampToValueAtTime(1.0, now + 5.0);
     }
 
     stop() {
+        // Fade out ambience over 3 seconds
+        this.fadeMaster(0.0, 3.0);
+    }
+
+    fadeMaster(targetVolume, duration) {
         if (!this.ctx) return;
-        
-        this.isPlaying = false;
-        // Fade out master gain smoothly over 1.5 seconds
         const now = this.ctx.currentTime;
         this.masterGain.gain.cancelScheduledValues(now);
         this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, now);
-        this.masterGain.gain.linearRampToValueAtTime(0.0, now + 1.5);
+        this.masterGain.gain.linearRampToValueAtTime(targetVolume, now + duration);
     }
 
     cleanup() {
         this.cricketsActive = false;
-        if (this.cricketTimer) clearTimeout(this.cricketTimer);
+        this.chimesActive = false;
+        this.isPlaying = false;
         
-        // Stop any active oscillators
+        if (this.cricketTimer) clearTimeout(this.cricketTimer);
+        if (this.chimesTimer) clearTimeout(this.chimesTimer);
+        
         try {
             if (this.windNoise) this.windNoise.stop();
-            if (this.windLFO1) this.windLFO1.stop();
-            if (this.windLFO2) this.windLFO2.stop();
+            if (this.windLFOFreq) this.windLFOFreq.stop();
+            if (this.windLFOGain) this.windLFOGain.stop();
+            if (this.droneLFO) this.droneLFO.stop();
+            this.droneOscs.forEach(o => o.osc.stop());
         } catch (e) {}
 
         if (this.ctx) {
             this.ctx.close();
             this.ctx = null;
+            this.isInitialized = false;
         }
     }
 }

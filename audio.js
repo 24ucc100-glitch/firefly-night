@@ -20,6 +20,7 @@ class NightAmbience {
         this.cricketsActive = false;
         this.cricketTimer = null;
         this.cricketGains = [];
+        this.cricketVolume = 0.018;
 
         // Chimes variables
         this.chimesActive = false;
@@ -195,8 +196,8 @@ class NightAmbience {
 
         // Smooth chirp amplitude envelope
         chirpGain.gain.setValueAtTime(0, now);
-        chirpGain.gain.linearRampToValueAtTime(0.018, now + 0.03); // Low volume
-        chirpGain.gain.setValueAtTime(0.018, now + chirpDuration - 0.08);
+        chirpGain.gain.linearRampToValueAtTime(this.cricketVolume, now + 0.03);
+        chirpGain.gain.setValueAtTime(this.cricketVolume, now + chirpDuration - 0.08);
         chirpGain.gain.exponentialRampToValueAtTime(0.0001, now + chirpDuration);
 
         // Stop and clean nodes
@@ -367,6 +368,84 @@ class NightAmbience {
         this.masterGain.gain.cancelScheduledValues(now);
         this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, now);
         this.masterGain.gain.linearRampToValueAtTime(targetVolume, now + duration);
+    }
+
+    stopCrickets() {
+        this.cricketsActive = false;
+        if (this.cricketTimer) {
+            clearTimeout(this.cricketTimer);
+            this.cricketTimer = null;
+        }
+        if (this.ctx) {
+            const now = this.ctx.currentTime;
+            this.cricketGains.forEach(gainNode => {
+                try {
+                    gainNode.gain.cancelScheduledValues(now);
+                    gainNode.gain.setValueAtTime(gainNode.gain.value, now);
+                    gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.5);
+                } catch (e) {}
+            });
+        }
+    }
+
+    resumeCrickets(lowVolume = false) {
+        if (this.cricketsActive) return;
+        this.cricketsActive = true;
+        this.cricketVolume = lowVolume ? 0.006 : 0.018;
+        this.scheduleCricketChirps();
+    }
+
+    setVolume(volumeFraction) {
+        if (!this.isInitialized || !this.ctx) return;
+        const now = this.ctx.currentTime;
+        this.masterGain.gain.cancelScheduledValues(now);
+        this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, now);
+        this.masterGain.gain.linearRampToValueAtTime(volumeFraction, now + 0.1);
+    }
+
+    playTwinkle() {
+        if (!this.isInitialized || !this.ctx || this.ctx.state === 'suspended' || !this.isPlaying) return;
+
+        const ctx = this.ctx;
+        const now = ctx.currentTime;
+        
+        const freq = 1800 + Math.random() * 1000;
+        const panValue = (Math.random() - 0.5) * 1.5;
+        
+        let panner = null;
+        if (ctx.createStereoPanner) {
+            panner = ctx.createStereoPanner();
+            panner.pan.setValueAtTime(panValue, now);
+        }
+
+        const osc = ctx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now);
+        
+        const oscGain = ctx.createGain();
+        oscGain.gain.setValueAtTime(0, now);
+        oscGain.gain.linearRampToValueAtTime(0.006, now + 0.004);
+        oscGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.7);
+
+        if (panner) {
+            osc.connect(oscGain);
+            oscGain.connect(panner);
+            panner.connect(this.masterGain);
+        } else {
+            osc.connect(oscGain);
+            oscGain.connect(this.masterGain);
+        }
+
+        osc.start(now);
+        
+        setTimeout(() => {
+            try {
+                osc.stop();
+                osc.disconnect();
+                oscGain.disconnect();
+                if (panner) panner.disconnect();
+            } catch (e) {}
+        }, 800);
     }
 
     cleanup() {

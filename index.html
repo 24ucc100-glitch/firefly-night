@@ -20,7 +20,6 @@
     <div id="ui-container">
         <!-- Intro Animation Overlay -->
         <div id="intro-overlay" class="intro-active">
-            <h1 class="intro-title">Firefly Night</h1>
             <p class="intro-desc">Tap the screen to call a firefly</p>
             <div class="intro-gestures">
                 <span>Double-tap for a swarm</span>
@@ -39,6 +38,55 @@
             <span class="btn-glow-layer"></span>
             <span class="btn-text">Experience the Joy</span>
         </button>
+
+        <!-- Settings Gear Icon (Top Right) -->
+        <button id="settings-toggle-btn" class="settings-btn" aria-label="Settings">
+            <svg viewBox="0 0 24 24" width="22" height="22">
+                <path fill="currentColor" d="M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65zM12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z"/>
+            </svg>
+        </button>
+
+        <!-- Settings Overlay Panel -->
+        <div id="settings-panel" class="panel-hidden">
+            <div class="panel-header">
+                <h3>Settings</h3>
+                <button id="settings-close-btn" aria-label="Close settings">&times;</button>
+            </div>
+            <div class="panel-body">
+                <div class="setting-item">
+                    <label for="volume-control">Ambience Volume</label>
+                    <div class="slider-container">
+                        <input type="range" id="volume-control" min="0" max="100" value="80">
+                        <span id="volume-val">80%</span>
+                    </div>
+                </div>
+                <div class="setting-item">
+                    <label for="threshold-control">Sequence Threshold</label>
+                    <div class="slider-container">
+                        <input type="range" id="threshold-control" min="10" max="60" value="20">
+                        <span id="threshold-val">20 fireflies</span>
+                    </div>
+                </div>
+                <div class="setting-item toggle-item">
+                    <span>Moonlight Background</span>
+                    <label class="switch">
+                        <input type="checkbox" id="moonlight-toggle">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+                <div class="setting-item toggle-item">
+                    <span>Floating Dust Particles</span>
+                    <label class="switch">
+                        <input type="checkbox" id="dust-toggle" checked>
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+                <div class="panel-buttons">
+                    <button id="screenshot-btn" class="action-btn">Capture Scene</button>
+                    <button id="reset-btn" class="action-btn danger">Reset Experience</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Scripts -->

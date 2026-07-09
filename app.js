@@ -21,7 +21,7 @@ let revealParticles = []; // Thousands of dust particles for image reveal
 // Image loading state
 let memoryImage = new Image();
 let isImageLoaded = false;
-let imageFitRect = { x: 0, y: 0, w: 0, h: 0 };
+let imageFitRect = { sx: 0, sy: 0, sw: 0, sh: 0, dx: 0, dy: 0, dw: 0, dh: 0 };
 
 // Sound instance
 const ambience = new NightAmbience();
@@ -38,7 +38,58 @@ let lastTapTime = 0;
 // Phase transition timing
 let phaseTimer = 0;
 let revealStartTime = 0;
-const MAX_FIREFLIES = 120;
+const MAX_FIREFLIES = 200; // Performance safety cap
+
+// v2 Settings & Guided sequence variables
+let sequenceCount = 0;
+let sequenceThreshold = 20;
+let hasTriggeredConvergence = false;
+let enableDust = true;
+let dustParticles = [];
+let lastTwinkleTime = 0;
+
+// --- Dust Particle Class ---
+class DustParticle {
+    constructor() {
+        this.reset(true);
+    }
+
+    reset(initiallyOnScreen = false) {
+        this.x = Math.random() * width;
+        this.y = initiallyOnScreen ? Math.random() * height : height + 10;
+        this.size = 0.5 + Math.random() * 1.5;
+        this.vx = (Math.random() - 0.5) * 0.15;
+        this.vy = -0.05 - Math.random() * 0.2; // Drifts upwards slowly
+        this.opacity = 0;
+        this.maxOpacity = 0.08 + Math.random() * 0.18; // Very subtle
+        this.fadeSpeed = 0.005 + Math.random() * 0.005;
+    }
+
+    update() {
+        this.x += this.vx;
+        this.y += this.vy;
+
+        if (this.opacity < this.maxOpacity) {
+            this.opacity += this.fadeSpeed;
+        }
+
+        // Reset if it goes off screen boundaries
+        if (this.y < -10 || this.x < -10 || this.x > width + 10) {
+            this.reset(false);
+        }
+    }
+
+    draw() {
+        if (this.opacity <= 0.01) return;
+        ctx.save();
+        ctx.globalAlpha = this.opacity;
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+    }
+}
 
 // Organic pseudo-noise helper
 // Generates smooth sinusoidal waves using detuned wave frequencies
@@ -467,7 +518,7 @@ function init() {
     });
 
     // Pre-load the user-supplied forest image
-    memoryImage.src = 'memory.jpg';
+    memoryImage.src = 'experience-the-joy-image.png';
     memoryImage.onload = () => {
         isImageLoaded = true;
         recalculateImageFit();
@@ -498,23 +549,22 @@ function recalculateImageFit() {
     const canvasRatio = width / height;
     const imgRatio = memoryImage.width / memoryImage.height;
     
-    let fitW, fitH, fitX, fitY;
+    let sX = 0;
+    let sY = 0;
+    let sW = memoryImage.width;
+    let sH = memoryImage.height;
     
     if (canvasRatio > imgRatio) {
-        // Landscape viewport, portrait image (fit to height)
-        fitH = height;
-        fitW = height * imgRatio;
-        fitX = (width - fitW) / 2;
-        fitY = 0;
+        // Landscape viewport, portrait image (fit to height) - cover crop
+        sH = memoryImage.width / canvasRatio;
+        sY = (memoryImage.height - sH) / 2;
     } else {
-        // Portrait viewport, landscape image (fit to width)
-        fitW = width;
-        fitH = width / imgRatio;
-        fitX = 0;
-        fitY = (height - fitH) / 2;
+        // Portrait viewport, landscape image (fit to width) - cover crop
+        sW = memoryImage.height * canvasRatio;
+        sX = (memoryImage.width - sW) / 2;
     }
     
-    imageFitRect = { x: fitX, y: fitY, w: fitW, h: fitH };
+    imageFitRect = { sx: sX, sy: sY, sw: sW, sh: sH, dx: 0, dy: 0, dw: width, dh: height };
 }
 
 // --- Phase 1: Intro Overlay ---
@@ -547,7 +597,7 @@ function addFirefly(x, y) {
     if (currentPhase !== PHASE_SUMMONING && currentPhase !== PHASE_FINAL) return;
     
     if (currentPhase === PHASE_SUMMONING) {
-        // Verify we don't exceed the limit
+        // Verify we don't exceed the safety limit
         const activeCount = fireflies.filter(f => !f.fadingOut).length;
         if (activeCount >= MAX_FIREFLIES) {
             return;
@@ -556,18 +606,37 @@ function addFirefly(x, y) {
         // Trigger ambient sound immediately upon the first touch
         if (!ambience.isPlaying) {
             ambience.start();
+            const savedVolume = localStorage.getItem('ff_volume');
+            const initialVolume = savedVolume !== null ? parseFloat(savedVolume) / 100 : 0.8;
+            ambience.setVolume(initialVolume);
         }
 
         const f = new Firefly(x, y);
         fireflies.push(f);
+        
+        // Play soft twinkle chimes (loosely tied to firefly appearances)
+        const now = Date.now();
+        if (now - lastTwinkleTime > 600 && Math.random() < 0.25) {
+            ambience.playTwinkle();
+            lastTwinkleTime = now;
+        }
 
-        // Check if limit reached
-        if (fireflies.filter(f => !f.fadingOut).length >= MAX_FIREFLIES) {
+        // Track sequence progression
+        sequenceCount++;
+
+        // Check if convergence threshold reached
+        if (sequenceCount >= sequenceThreshold && !hasTriggeredConvergence) {
+            hasTriggeredConvergence = true;
             triggerPausePhase();
         }
     } else {
-        // Final scene has no limit constraints
+        // Final scene has no limit constraints, but let's play a twinkle sometimes too!
         fireflies.push(new Firefly(x, y));
+        const now = Date.now();
+        if (now - lastTwinkleTime > 800 && Math.random() < 0.2) {
+            ambience.playTwinkle();
+            lastTwinkleTime = now;
+        }
     }
 }
 
@@ -576,8 +645,8 @@ function triggerPausePhase() {
     
     // Let fireflies fly normally for 2 seconds
     setTimeout(() => {
-        // Fade ambience sounds out over 3 seconds
-        ambience.stop();
+        // Crickets stop once threshold is reached
+        ambience.stopCrickets();
         
         // Begin spiral convergence
         startConvergencePhase();
@@ -662,20 +731,16 @@ function startImageReveal() {
     // Scale resolution dynamically to guarantee 60 FPS
     // Scale grid based on viewport size, ~9,000 particles max
     const gridW = 120;
-    const gridH = Math.round(120 * (memoryImage.height / memoryImage.width));
+    const gridH = Math.round(120 * (height / width)); // Map to canvas aspect ratio
     
     offCanvas.width = gridW;
     offCanvas.height = gridH;
-    offCtx.drawImage(memoryImage, 0, 0, gridW, gridH);
+    
+    // Draw the cropped portion of memoryImage onto offCanvas
+    offCtx.drawImage(memoryImage, imageFitRect.sx, imageFitRect.sy, imageFitRect.sw, imageFitRect.sh, 0, 0, gridW, gridH);
     
     const imgData = offCtx.getImageData(0, 0, gridW, gridH);
     const data = imgData.data;
-
-    // Center fit bounding rect details
-    const fitX = imageFitRect.x;
-    const fitY = imageFitRect.y;
-    const fitW = imageFitRect.w;
-    const fitH = imageFitRect.h;
 
     for (let y = 0; y < gridH; y++) {
         for (let x = 0; x < gridW; x++) {
@@ -688,9 +753,9 @@ function startImageReveal() {
             // Ignore dark or fully transparent pixels to optimize count
             if (a < 120 || (r < 12 && g < 12 && b < 12)) continue;
 
-            // Map grid position to final canvas layout coordinate
-            const targetX = fitX + (x / gridW) * fitW;
-            const targetY = fitY + (y / gridH) * fitH;
+            // Map grid position to final canvas layout coordinate (which is full width/height)
+            const targetX = (x / gridW) * width;
+            const targetY = (y / gridH) * height;
 
             revealParticles.push({
                 startX: width / 2, // Fly from button center location
@@ -717,41 +782,29 @@ function startImageReveal() {
 function startFinalScene() {
     currentPhase = PHASE_FINAL;
     revealParticles = [];
+    fireflies = []; // Clear current fireflies to repopulate slowly
     
     // Slow fade ambient audio back in over 5 seconds
     ambience.start();
+    // Resume crickets at a low volume
+    ambience.resumeCrickets(true);
 }
 
-// Spawns occasional fireflies from random screen edges
+// Spawns occasional fireflies over the image slowly
 function handleFinalEdgeSpawns() {
-    if (fireflies.length >= 15) return; // Cap at 15 active ones to prevent obscuring photo
+    if (fireflies.length >= 12) return; // Cap active ones
     
-    if (Math.random() < 0.015) { // Slow spawn chance
-        let x, y;
-        const edge = Math.floor(Math.random() * 4);
+    if (Math.random() < 0.005) { // Slow spawn chance (~once per 3-5 seconds)
+        // Spawn anywhere on screen, fading in slowly
+        const x = 50 + Math.random() * (width - 100);
+        const y = 50 + Math.random() * (height - 100);
         
-        switch (edge) {
-            case 0: // Top
-                x = Math.random() * width;
-                y = -10;
-                break;
-            case 1: // Right
-                x = width + 10;
-                y = Math.random() * height;
-                break;
-            case 2: // Bottom
-                x = Math.random() * width;
-                y = height + 10;
-                break;
-            case 3: // Left
-                x = -10;
-                y = Math.random() * height;
-                break;
-        }
-
-        const f = new Firefly(x, y, true);
+        const f = new Firefly(x, y, false);
         f.maxTrailLength = 8;
         fireflies.push(f);
+        
+        // Synced twinkle sound
+        ambience.playTwinkle();
     }
 }
 
@@ -821,6 +874,143 @@ function setupInteractions() {
         e.stopPropagation();
         handleButtonAction();
     });
+
+    // Settings panel controls
+    const settingsToggleBtn = document.getElementById('settings-toggle-btn');
+    const settingsCloseBtn = document.getElementById('settings-close-btn');
+    const settingsPanel = document.getElementById('settings-panel');
+    const volumeControl = document.getElementById('volume-control');
+    const volumeVal = document.getElementById('volume-val');
+    const thresholdControl = document.getElementById('threshold-control');
+    const thresholdVal = document.getElementById('threshold-val');
+    const moonlightToggle = document.getElementById('moonlight-toggle');
+    const dustToggle = document.getElementById('dust-toggle');
+    const screenshotBtn = document.getElementById('screenshot-btn');
+    const resetBtn = document.getElementById('reset-btn');
+
+    // Load settings from localStorage if available
+    try {
+        const savedVolume = localStorage.getItem('ff_volume');
+        if (savedVolume !== null) {
+            volumeControl.value = savedVolume;
+            volumeVal.textContent = savedVolume + '%';
+        }
+        const savedThreshold = localStorage.getItem('ff_threshold');
+        if (savedThreshold !== null) {
+            thresholdControl.value = savedThreshold;
+            sequenceThreshold = parseInt(savedThreshold, 10);
+            thresholdVal.textContent = savedThreshold + ' fireflies';
+        }
+        const savedMoonlight = localStorage.getItem('ff_moonlight');
+        if (savedMoonlight !== null) {
+            const isMoonlight = savedMoonlight === 'true';
+            moonlightToggle.checked = isMoonlight;
+            if (isMoonlight) document.body.classList.add('moonlight-bg');
+        }
+        const savedDust = localStorage.getItem('ff_dust');
+        if (savedDust !== null) {
+            enableDust = savedDust === 'true';
+            dustToggle.checked = enableDust;
+        }
+    } catch (e) {
+        console.warn("Could not load settings from localStorage", e);
+    }
+
+    // Toggle Settings Panel
+    settingsToggleBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        settingsPanel.classList.toggle('panel-hidden');
+    });
+
+    settingsCloseBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        settingsPanel.classList.add('panel-hidden');
+    });
+
+    // Close settings if click happens outside the panel
+    window.addEventListener('click', (e) => {
+        if (!settingsPanel.classList.contains('panel-hidden') && 
+            !settingsPanel.contains(e.target) && 
+            !settingsToggleBtn.contains(e.target)) {
+            settingsPanel.classList.add('panel-hidden');
+        }
+    });
+
+    // Settings adjustments
+    volumeControl.addEventListener('input', (e) => {
+        const vol = e.target.value;
+        volumeVal.textContent = vol + '%';
+        ambience.setVolume(vol / 100);
+        try { localStorage.setItem('ff_volume', vol); } catch (err) {}
+    });
+
+    thresholdControl.addEventListener('input', (e) => {
+        const threshold = e.target.value;
+        sequenceThreshold = parseInt(threshold, 10);
+        thresholdVal.textContent = threshold + ' fireflies';
+        try { localStorage.setItem('ff_threshold', threshold); } catch (err) {}
+    });
+
+    moonlightToggle.addEventListener('change', (e) => {
+        const isMoonlight = e.target.checked;
+        if (isMoonlight) {
+            document.body.classList.add('moonlight-bg');
+        } else {
+            document.body.classList.remove('moonlight-bg');
+        }
+        try { localStorage.setItem('ff_moonlight', isMoonlight); } catch (err) {}
+    });
+
+    dustToggle.addEventListener('change', (e) => {
+        enableDust = e.target.checked;
+        try { localStorage.setItem('ff_dust', enableDust); } catch (err) {}
+    });
+
+    screenshotBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        captureScene();
+    });
+
+    resetBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        window.location.reload();
+    });
+}
+
+function captureScene() {
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = canvas.width;
+    tempCanvas.height = canvas.height;
+    const tempCtx = tempCanvas.getContext('2d');
+    
+    // 1. Draw background color/gradient
+    if (document.body.classList.contains('moonlight-bg')) {
+        const grad = tempCtx.createRadialGradient(tempCanvas.width / 2, 0, 0, tempCanvas.width / 2, 0, Math.max(tempCanvas.width, tempCanvas.height));
+        grad.addColorStop(0, '#061125');
+        grad.addColorStop(1, '#000000');
+        tempCtx.fillStyle = grad;
+    } else {
+        tempCtx.fillStyle = '#000000';
+    }
+    tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+    
+    // 2. Draw revealed image (if loaded and in PHASE_FINAL or PHASE_REVEAL)
+    if (isImageLoaded && (currentPhase === PHASE_FINAL || currentPhase === PHASE_REVEAL)) {
+        const dpr = window.devicePixelRatio || 1;
+        tempCtx.drawImage(
+            memoryImage, 
+            imageFitRect.sx, imageFitRect.sy, imageFitRect.sw, imageFitRect.sh,
+            0, 0, tempCanvas.width, tempCanvas.height
+        );
+    }
+    
+    // 3. Draw main simulation canvas on top
+    tempCtx.drawImage(canvas, 0, 0);
+    
+    const link = document.createElement('a');
+    link.download = 'firefly-night.png';
+    link.href = tempCanvas.toDataURL('image/png');
+    link.click();
 }
 
 function spawnSwarm(x, y) {
@@ -854,6 +1044,19 @@ function spawnSwarm(x, y) {
 function tick() {
     // Canvas is strictly clear and transparency-driven (pure black DOM body reveals through)
     ctx.clearRect(0, 0, width, height);
+
+    // 0. Update and Draw Floating Dust Particles (if enabled)
+    if (enableDust) {
+        if (dustParticles.length === 0) {
+            for (let i = 0; i < 35; i++) {
+                dustParticles.push(new DustParticle());
+            }
+        }
+        dustParticles.forEach(dp => {
+            dp.update();
+            dp.draw();
+        });
+    }
 
     // 1. Process Summoning long press attraction ripple
     if (isAttracting && currentPhase === PHASE_SUMMONING) {
@@ -928,7 +1131,7 @@ function tick() {
         if (imgAlpha > 0 && isImageLoaded) {
             ctx.save();
             ctx.globalAlpha = imgAlpha;
-            ctx.drawImage(memoryImage, imageFitRect.x, imageFitRect.y, imageFitRect.w, imageFitRect.h);
+            ctx.drawImage(memoryImage, imageFitRect.sx, imageFitRect.sy, imageFitRect.sw, imageFitRect.sh, 0, 0, width, height);
             ctx.restore();
         }
 
@@ -990,7 +1193,7 @@ function tick() {
     // 6. Draw background image in Final Scene
     if (currentPhase === PHASE_FINAL && isImageLoaded) {
         ctx.save();
-        ctx.drawImage(memoryImage, imageFitRect.x, imageFitRect.y, imageFitRect.w, imageFitRect.h);
+        ctx.drawImage(memoryImage, imageFitRect.sx, imageFitRect.sy, imageFitRect.sw, imageFitRect.sh, 0, 0, width, height);
         ctx.restore();
 
         // Redraw fireflies on top of image
